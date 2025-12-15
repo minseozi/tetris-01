@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Mobile Tetris (Single File)</title>
+    
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 10px;
+            user-select: none; /* 모바일에서 드래그 방지 */
+        }
+
+        #game-container {
+            width: 90%;
+            max-width: 400px;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-top: 0;
+        }
+
+        #info-panel {
+            display: flex;
+            justify-content: space-around;
+            padding: 5px;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #ddd;
+        }
+        
+        #next-piece-display {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            width: 60px; /* 4x4 크기 */
+            height: 60px;
+            margin-left: 10px;
+        }
+
+        #game-board {
+            display: grid;
+            /* JS에서 10x20 그리드로 설정됩니다 */
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(20, 1fr);
+            width: 100%;
+            height: calc(100vw * 2); /* 화면 너비에 맞게 높이 조정 (2:1 비율) */
+            max-height: 800px; /* 최대 높이 설정 */
+            border: 5px solid #333;
+            background-color: #111;
+            margin: 0 auto;
+        }
+
+        .cell {
+            /* 각 칸의 기본 스타일 */
+            aspect-ratio: 1 / 1; /* 정사각형 유지 */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-sizing: border-box;
+        }
+
+        /* 블록 색상 */
+        .i { background-color: cyan; border-color: #00ffff80; }
+        .j { background-color: blue; border-color: #0000ff80; }
+        .l { background-color: orange; border-color: #ffa50080; }
+        .o { background-color: yellow; border-color: #ffff0080; }
+        .s { background-color: green; border-color: #00800080; }
+        .t { background-color: purple; border-color: #80008080; }
+        .z { background-color: red; border-color: #ff000080; }
+
+        #controls {
+            display: grid;
+            grid-template-areas: 
+                "left rotate right"
+                "down fast-drop fast-drop";
+            gap: 10px;
+            width: 90%;
+            max-width: 400px;
+            padding: 10px 0;
+        }
+
+        #controls button {
+            padding: 15px;
+            font-size: 1.5em;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            background-color: #4CAF50;
+            color: white;
+            box-shadow: 0 3px 0 #388E3C;
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+
+        #left { grid-area: left; background-color: #2196F3; box-shadow: 0 3px 0 #1976D2; }
+        #rotate { grid-area: rotate; }
+        #right { grid-area: right; background-color: #2196F3; box-shadow: 0 3px 0 #1976D2; }
+        #down { grid-area: down; background-color: #FF9800; box-shadow: 0 3px 0 #FB8C00; }
+        #fast-drop { grid-area: fast-drop; background-color: #F44336; box-shadow: 0 3px 0 #D32F2F; }
+
+        #controls button:active {
+            box-shadow: none;
+            transform: translateY(3px);
+        }
+
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 2em;
+            text-align: center;
+            z-index: 10;
+        }
+        .hidden { display: none; }
+
+        /* 작은 화면 (모바일)에 최적화 */
+        @media (max-width: 600px) {
+            #game-board {
+                height: 400px; /* 작은 화면에서는 고정 높이 */
+                max-height: none;
+            }
+            #controls button {
+                padding: 10px;
+                font-size: 1.2em;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>Mobile Tetris</h1>
+        <div id="info-panel">
+            <p>Score: <span id="score">0</span></p>
+            <div>
+                <p>Next Piece:</p>
+                <div id="next-piece-display"></div>
+            </div>
+        </div>
+        
+        <div id="game-board"></div>
+
+        <div id="message" class="hidden"></div>
+    </div>
+
+    <div id="controls">
+        <button id="left" ontouchstart="movePiece('left')">◀</button>
+        <button id="rotate" ontouchstart="rotatePiece()">↻</button>
+        <button id="right" ontouchstart="movePiece('right')">▶</button>
+        <button id="down" ontouchstart="movePiece('down')">▼</button>
+        <button id="fast-drop" ontouchstart="fastDrop()">⬇️</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const board = document.getElementById('game-board');
+            const scoreDisplay = document.getElementById('score');
+            const nextPieceDisplay = document.getElementById('next-piece-display');
+            const message = document.getElementById('message');
+
+            const WIDTH = 10;
+            const HEIGHT = 20;
+            let grid = [];
+            let score = 0;
+            let currentPiece;
+            let nextPiece;
+            let currentRotation = 0;
+            let currentX = 3;
+            let currentY = 0;
+            let timerId;
+            let gameSpeed = 500; // 블록 하강 속도 (ms)
+
+            // 테트리스 블록 모양 (I, J, L, O, S, T, Z)
+            const pieces = [
+                // I
+                [[1, WIDTH + 1, WIDTH * 2 + 1, WIDTH * 3 + 1], [WIDTH, WIDTH + 1, WIDTH + 2, WIDTH + 3], [1, WIDTH + 1, WIDTH * 2 + 1, WIDTH * 3 + 1], [WIDTH, WIDTH + 1, WIDTH + 2, WIDTH + 3]],
+                // J
+                [[1, WIDTH + 1, WIDTH * 2 + 1, 2], [WIDTH, WIDTH + 1, WIDTH + 2, WIDTH * 2 + 2], [1, WIDTH + 1, WIDTH * 2 + 1, WIDTH * 2], [WIDTH, WIDTH * 2, WIDTH * 2 + 1, WIDTH * 2 + 2]],
+                // L
+                [[1, WIDTH + 1, WIDTH * 2 + 1, WIDTH * 2 + 2], [WIDTH, WIDTH + 1, WIDTH + 2, 2], [1, WIDTH + 1, WIDTH * 2 + 1, 0], [WIDTH, WIDTH * 2, WIDTH * 2 + 1, WIDTH * 2 + 2]],
+                // O
+                [[0, 1, WIDTH, WIDTH + 1], [0, 1, WIDTH, WIDTH + 1], [0, 1, WIDTH, WIDTH + 1], [0, 1, WIDTH, WIDTH + 1]],
+                // S
+                [[WIDTH, WIDTH + 1, 1, 2], [1, WIDTH + 1, WIDTH + 2, WIDTH * 2 + 2], [WIDTH, WIDTH + 1, 1, 2], [1, WIDTH + 1, WIDTH + 2, WIDTH * 2 + 2]],
+                // T
+                [[WIDTH, WIDTH + 1, WIDTH + 2, 1], [1, WIDTH + 1, WIDTH * 2 + 1, WIDTH], [WIDTH, WIDTH + 1, WIDTH + 2, WIDTH * 2 + 1], [1, WIDTH + 1, WIDTH * 2 + 1, WIDTH + 2]],
+                // Z
+                [[0, 1, WIDTH + 1, WIDTH + 2], [2, WIDTH + 2, WIDTH + 1, WIDTH * 2 + 1], [0, 1, WIDTH + 1, WIDTH + 2], [2, WIDTH + 2, WIDTH + 1, WIDTH * 2 + 1]]
+            ];
+            const pieceClasses = ['i', 'j', 'l', 'o', 's', 't', 'z'];
+
+            // 1. 보드 생성 (200개의 셀)
+            function createBoard() {
+                for (let i = 0; i < WIDTH * HEIGHT; i++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    board.appendChild(cell);
+                    grid.push(cell);
+                }
+                // 다음 블록 디스플레이 초기화
+                nextPieceDisplay.style.gridTemplateColumns = 'repeat(4, 1fr)';
+                for(let i = 0; i < 4 * 4; i++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.style.width = '15px';
+                    cell.style.height = '15px';
+                    // 다음 블록 디스플레이에서는 경계를 제거
+                    cell.style.border = 'none'; 
+                    nextPieceDisplay.appendChild(cell);
+                }
+            }
+
+            // 2. 블록 모양 선택 및 초기화
+            function generatePiece() {
+                if (!nextPiece) {
+                    const random = Math.floor(Math.random() * pieces.length);
+                    nextPiece = { shape: pieces[random], className: pieceClasses[random], index: random };
+                }
+                currentPiece = nextPiece;
+                const random = Math.floor(Math.random() * pieces.length);
+                nextPiece = { shape: pieces[random], className: pieceClasses[random], index: random };
+                
+                currentRotation = 0;
+                currentX = 3;
+                currentY = 0;
+                
+                drawPiece();
+                displayNextPiece();
+
+                // 게임 오버 체크: 새 블록이 생성되자마자 충돌하면 오버
+                if (checkCollision()) {
+                    gameOver();
+                    return false;
+                }
+                return true;
+            }
+
+            // 3. 블록 그리기 (현재 위치에 클래스 추가)
+            function drawPiece() {
+                currentPiece.shape[currentRotation].forEach(index => {
+                    // index는 0부터 200 미만이어야 함
+                    const cellIndex = currentY * WIDTH + currentX + index;
+                    if (cellIndex >= 0 && cellIndex < WIDTH * HEIGHT) {
+                        grid[cellIndex].classList.add(currentPiece.className);
+                    }
+                });
+            }
+
+            // 4. 블록 지우기 (이전 위치에서 클래스 제거)
+            function undrawPiece() {
+                currentPiece.shape[currentRotation].forEach(index => {
+                    const cellIndex = currentY * WIDTH + currentX + index;
+                    if (cellIndex >= 0 && cellIndex < WIDTH * HEIGHT) {
+                        grid[cellIndex].classList.remove(currentPiece.className);
+                    }
+                });
+            }
+
+            // 5. 충돌 감지
+            function checkCollision(newX = currentX, newY = currentY, rotation = currentRotation) {
+                return currentPiece.shape[rotation].some(index => {
+                    const cellIndex = newY * WIDTH + newX + index;
+                    
+                    // 블록의 현재 셀 위치
+                    const currentCellX = (newX + index) % WIDTH;
+                    const currentCellY = Math.floor((newX + index) / WIDTH) + newY;
+
+                    // 1. 보드 바닥에 닿았는지 확인
+                    if (currentCellY >= HEIGHT) {
+                        return true;
+                    }
+
+                    // 2. 좌우 벽에 닿았는지 확인
+                    // 이동 방향과 현재 블록의 x좌표를 비교하여 벽 통과를 방지
+                    if (newX < currentX && currentCellX === WIDTH - 1) { 
+                        // 왼쪽으로 이동했는데 오른쪽 벽에 붙어있는 경우 (발생하면 안됨)
+                        return true;
+                    }
+                    if (newX > currentX && currentCellX === 0) { 
+                        // 오른쪽으로 이동했는데 왼쪽 벽에 붙어있는 경우 (발생하면 안됨)
+                        return true;
+                    }
+
+                    // 3. 이미 채워진 블록과 충돌했는지 확인 (인덱스 유효성 검사 후)
+                    if (cellIndex >= 0 && cellIndex < WIDTH * HEIGHT) {
+                        // grid[cellIndex].classList.length > 1 는 .cell 클래스 외에 다른 클래스(색상)가 있다는 뜻
+                        if (grid[cellIndex].classList.length > 1) {
+                            return true;
+                        }
+                    }
+                    
+                    return false;
+                });
+            }
+
+            // 6. 블록 고정 (사실상 drawPiece를 다시 할 필요 없이 충돌하면 그 위치에 놔두는 것)
+            function freezePiece() {
+                // 현재 블록은 이미 그려져 있으므로, 그 위치에 클래스를 유지하면 고정됨
+            }
+
+            // 7. 블록 하강 (게임 루프)
+            function moveDown() {
+                undrawPiece();
+                if (!checkCollision(currentX, currentY + 1)) {
+                    currentY++;
+                    drawPiece();
+                } else {
+                    // 바닥이나 다른 블록에 닿았으면 고정 및 새 블록 생성
+                    freezePiece();
+                    removeLines();
+                    if (!generatePiece()) {
+                        clearInterval(timerId);
+                    }
+                }
+            }
+
+            // 8. 줄 제거
+            function removeLines() {
+                let linesRemoved = 0;
+                for (let r = HEIGHT - 1; r >= 0; r--) {
+                    const rowStart = r * WIDTH;
+                    const row = Array.from(grid).slice(rowStart, rowStart + WIDTH);
+
+                    // 해당 줄이 모두 채워졌는지 확인 (클래스가 2개 이상이면 채워진 셀)
+                    const isFull = row.every(cell => cell.classList.length > 1);
+
+                    if (isFull) {
+                        linesRemoved++;
+                        
+                        // 해당 줄을 제거하고 위의 모든 줄을 아래로 내림
+                        // 1. DOM에서 제거
+                        row.forEach(cell => board.removeChild(cell));
+
+                        // 2. grid 배열 업데이트 (제거된 줄을 배열에서 제거)
+                        const cellsRemoved = grid.splice(rowStart, WIDTH);
+                        
+                        // 3. 빈 셀을 보드 맨 위에 삽입 (새로운 줄 생성)
+                        for(let i = 0; i < WIDTH; i++) {
+                            const newCell = document.createElement('div');
+                            newCell.classList.add('cell');
+                            grid.unshift(newCell); // 배열 맨 앞에 삽입
+                            board.insertBefore(newCell, board.firstChild); // DOM 맨 앞에 삽입
+                        }
+                        // 줄이 제거되었으므로 현재 행(r)을 다시 검사해야 함
+                        r++; 
+                    }
+                }
+                if (linesRemoved > 0) {
+                    // 1줄: 10, 2줄: 30, 3줄: 50, 4줄: 80 (점수 계산)
+                    score += [0, 10, 30, 50, 80][linesRemoved];
+                    scoreDisplay.textContent = score;
+                }
+            }
+
+            // 9. 블록 이동/회전 함수 (HTML에서 ontouchstart로 직접 호출됨)
+            window.movePiece = function(direction) {
+                if (timerId === null) return; 
+
+                undrawPiece();
+                let newX = currentX;
+                let newY = currentY;
+
+                switch (direction) {
+                    case 'left':
+                        newX--;
+                        break;
+                    case 'right':
+                        newX++;
+                        break;
+                    case 'down':
+                        newY++;
+                        break;
+                }
+
+                if (!checkCollision(newX, newY)) {
+                    currentX = newX;
+                    currentY = newY;
+                    drawPiece();
+                } else {
+                    drawPiece(); // 충돌했으면 원래 위치에 다시 그림
+                    if (direction === 'down') {
+                        // 아래로 충돌 시 바로 고정 및 다음 블록
+                        freezePiece();
+                        removeLines();
+                        if (!generatePiece()) {
+                            clearInterval(timerId);
+                        }
+                    }
+                }
+            }
+
+            window.rotatePiece = function() {
+                if (timerId === null) return;
+                undrawPiece();
+                
+                let newRotation = (currentRotation + 1) % 4;
+
+                // 회전 후 충돌 체크 (간단한 벽차기/벽 통과 방지)
+                if (!checkCollision(currentX, currentY, newRotation)) {
+                    currentRotation = newRotation;
+                } else {
+                    // 회전 후 벽에 박으면
+                    let kick = 0;
+                    if (currentX > WIDTH / 2) { // 오른쪽 벽 근처라면 왼쪽으로 밀어봄
+                        kick = -1;
+                    } else { // 왼쪽 벽 근처라면 오른쪽으로 밀어봄
+                        kick = 1;
+                    }
+                    if (!checkCollision(currentX + kick, currentY, newRotation)) {
+                        currentX += kick;
+                        currentRotation = newRotation;
+                    }
+                }
+                drawPiece();
+            }
+
+            window.fastDrop = function() {
+                if (timerId === null) return;
+                undrawPiece();
+                let dropScore = 0;
+                while(!checkCollision(currentX, currentY + 1)) {
+                    currentY++;
+                    dropScore++;
+                }
+                score += dropScore;
+                scoreDisplay.textContent = score;
+
+                drawPiece();
+                freezePiece();
+                removeLines();
+                if (!generatePiece()) {
+                    clearInterval(timerId);
+                }
+            }
+
+            // 10. 다음 블록 표시
+            function displayNextPiece() {
+                const displayGrid = nextPieceDisplay.children;
+                const nextShape = nextPiece.shape[0];
+                
+                // 이전 블록 지우기
+                Array.from(displayGrid).forEach(cell => cell.className = 'cell');
+                
+                // 새 블록 그리기 (4x4 영역)
+                nextShape.forEach(index => {
+                    // 10x20 그리드 기준 인덱스를 4x4 기준으로 변환
+                    const x = index % WIDTH;
+                    const y = Math.floor(index / WIDTH);
+                    
+                    // 4x4 영역에서 (y * 4 + x)에 해당
+                    if (y < 4 && x < 4) {
+                        displayGrid[y * 4 + x].classList.add(nextPiece.className);
+                    }
+                });
+            }
+
+            // 11. 게임 오버
+            function gameOver() {
+                clearInterval(timerId);
+                timerId = null;
+                message.textContent = `Game Over! Your Score: ${score}`;
+                message.classList.remove('hidden');
+            }
+
+            // 12. 게임 시작
+            function startGame() {
+                createBoard();
+                if (timerId) clearInterval(timerId); // 혹시 모를 이전 타이머 제거
+                score = 0;
+                scoreDisplay.textContent = score;
+                timerId = null;
+                
+                // 보드 내용 초기화 (게임 재시작 대비)
+                grid.forEach(cell => cell.className = 'cell');
+
+                generatePiece(); // 첫 블록과 다음 블록 설정
+                timerId = setInterval(moveDown, gameSpeed);
+                message.classList.add('hidden');
+            }
+
+            startGame();
+
+            // 키보드 입력 지원 (PC 테스트용)
+            document.addEventListener('keydown', (e) => {
+                if (timerId === null) return;
+                if (e.key === 'ArrowLeft') movePiece('left');
+                if (e.key === 'ArrowRight') movePiece('right');
+                if (e.key === 'ArrowDown') movePiece('down');
+                if (e.key === 'ArrowUp' || e.key === ' ') rotatePiece();
+            });
+        });
+    </script>
+</body>
+</html>
