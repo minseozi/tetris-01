@@ -4,17 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>모바일 테트리스</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        /* CSS를 여기에 합쳤습니다 */
+        body { background: #202028; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; overflow: hidden; touch-action: manipulation; }
+        #game-container { display: flex; flex-direction: column; align-items: center; margin-top: 20px; }
+        #tetris { border: 2px solid #fff; background-color: #000; height: 60vh; }
+        #score { font-size: 24px; margin-bottom: 10px; }
+        #controls { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+        .row { display: flex; justify-content: center; gap: 20px; }
+        button { width: 60px; height: 60px; font-size: 24px; background: #444; color: white; border: none; border-radius: 50%; touch-action: manipulation; }
+        button:active { background: #666; }
+    </style>
 </head>
 <body>
     <div id="game-container">
         <div id="score">Score: 0</div>
         <canvas id="tetris" width="240" height="400"></canvas>
-        
         <div id="controls">
-            <div class="row">
-                <button id="rotate">🔄</button>
-            </div>
+            <div class="row"><button id="rotate">🔄</button></div>
             <div class="row">
                 <button id="left">⬅️</button>
                 <button id="down">⬇️</button>
@@ -22,252 +29,174 @@
             </div>
         </div>
     </div>
-    <script src="tetris.js"></script>
+
+    <script>
+        /* JavaScript를 여기에 합쳤습니다 */
+        const canvas = document.getElementById('tetris');
+        const context = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        context.scale(20, 20);
+
+        function createPiece(type) {
+            if (type === 'I') return [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]];
+            else if (type === 'L') return [[0, 2, 0], [0, 2, 0], [0, 2, 2]];
+            else if (type === 'J') return [[0, 3, 0], [0, 3, 0], [3, 3, 0]];
+            else if (type === 'O') return [[4, 4], [4, 4]];
+            else if (type === 'Z') return [[5, 5, 0], [0, 5, 5], [0, 0, 0]];
+            else if (type === 'S') return [[0, 6, 6], [6, 6, 0], [0, 0, 0]];
+            else if (type === 'T') return [[0, 7, 0], [7, 7, 7], [0, 0, 0]];
+        }
+
+        function drawMatrix(matrix, offset) {
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = colors[value];
+                        context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                    }
+                });
+            });
+        }
+
+        function draw() {
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            drawMatrix(arena, {x: 0, y: 0});
+            drawMatrix(player.matrix, player.pos);
+        }
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        arena[y + player.pos.y][x + player.pos.x] = value;
+                    }
+                });
+            });
+        }
+
+        function rotate(matrix, dir) {
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) {
+                    [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+                }
+            }
+            if (dir > 0) matrix.forEach(row => row.reverse());
+            else matrix.reverse();
+        }
+
+        function collide(arena, player) {
+            const [m, o] = [player.matrix, player.pos];
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) return true;
+                }
+            }
+            return false;
+        }
+
+        function arenaSweep() {
+            let rowCount = 1;
+            outer: for (let y = arena.length - 1; y > 0; --y) {
+                for (let x = 0; x < arena[y].length; ++x) {
+                    if (arena[y][x] === 0) continue outer;
+                }
+                const row = arena.splice(y, 1)[0].fill(0);
+                arena.unshift(row);
+                ++y;
+                player.score += rowCount * 10;
+                rowCount *= 2;
+            }
+            updateScore();
+        }
+
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playerReset();
+                arenaSweep();
+            }
+            dropCounter = 0;
+        }
+
+        function playerMove(dir) {
+            player.pos.x += dir;
+            if (collide(arena, player)) player.pos.x -= dir;
+        }
+
+        function playerRotate(dir) {
+            const pos = player.pos.x;
+            let offset = 1;
+            rotate(player.matrix, dir);
+            while (collide(arena, player)) {
+                player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (offset > player.matrix[0].length) {
+                    rotate(player.matrix, -dir);
+                    player.pos.x = pos;
+                    return;
+                }
+            }
+        }
+
+        function playerReset() {
+            const pieces = 'ILJOTSZ';
+            player.matrix = createPiece(pieces[pieces.length * Math.random() | 0]);
+            player.pos.y = 0;
+            player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
+            if (collide(arena, player)) {
+                arena.forEach(row => row.fill(0));
+                player.score = 0;
+                updateScore();
+            }
+        }
+
+        function updateScore() {
+            scoreElement.innerText = `Score: ${player.score}`;
+        }
+
+        const colors = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
+        const arena = Array.from({length: 20}, () => Array(12).fill(0));
+        const player = { pos: {x: 0, y: 0}, matrix: null, score: 0 };
+
+        let dropCounter = 0;
+        let dropInterval = 1000;
+        let lastTime = 0;
+
+        function update(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) playerDrop();
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        // 모바일 버튼 클릭 이벤트
+        document.getElementById('left').addEventListener('click', () => playerMove(-1));
+        document.getElementById('right').addEventListener('click', () => playerMove(1));
+        document.getElementById('down').addEventListener('click', () => playerDrop());
+        document.getElementById('rotate').addEventListener('click', () => playerRotate(1));
+
+        // 키보드 스페이스바 & 화살표 추가 (요청하신 기능!)
+        document.addEventListener('keydown', event => {
+            if (event.keyCode === 32) { // 스페이스바: 회전
+                playerRotate(1);
+                event.preventDefault();
+            } else if (event.keyCode === 37) { // 왼쪽 화살표
+                playerMove(-1);
+            } else if (event.keyCode === 39) { // 오른쪽 화살표
+                playerMove(1);
+            } else if (event.keyCode === 40) { // 아래 화살표
+                playerDrop();
+            }
+        });
+
+        playerReset();
+        updateScore();
+        update();
+    </script>
 </body>
 </html>
-body {
-    background: #202028;
-    color: #fff;
-    font-family: sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin: 0;
-    overflow: hidden; /* 스크롤 방지 */
-    touch-action: manipulation;
-}
-
-#game-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-top: 20px;
-}
-
-#tetris {
-    border: 2px solid #fff;
-    background-color: #000;
-    height: 60vh; /* 화면 높이에 맞춤 */
-}
-
-#score {
-    font-size: 24px;
-    margin-bottom: 10px;
-}
-
-#controls {
-    margin-top: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.row {
-    display: flex;
-    justify-content: center;
-    gap: 20px;
-}
-
-button {
-    width: 60px;
-    height: 60px;
-    font-size: 24px;
-    background: #444;
-    color: white;
-    border: none;
-    border-radius: 50%;
-    touch-action: manipulation;
-}
-
-button:active {
-    background: #666;
-}
-const canvas = document.getElementById('tetris');
-const context = canvas.getContext('2d');
-const scoreElement = document.getElementById('score');
-
-context.scale(20, 20);
-
-// 테트리스 블록 모양 정의
-function createPiece(type) {
-    if (type === 'I') return [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]];
-    else if (type === 'L') return [[0, 2, 0], [0, 2, 0], [0, 2, 2]];
-    else if (type === 'J') return [[0, 3, 0], [0, 3, 0], [3, 3, 0]];
-    else if (type === 'O') return [[4, 4], [4, 4]];
-    else if (type === 'Z') return [[5, 5, 0], [0, 5, 5], [0, 0, 0]];
-    else if (type === 'S') return [[0, 6, 6], [6, 6, 0], [0, 0, 0]];
-    else if (type === 'T') return [[0, 7, 0], [7, 7, 7], [0, 0, 0]];
-}
-
-// 그리기 함수
-function draw() {
-    context.fillStyle = '#000';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    drawMatrix(arena, {x: 0, y: 0});
-    drawMatrix(player.matrix, player.pos);
-}
-
-function drawMatrix(matrix, offset) {
-    matrix.forEach((row, y) => {
-        row.forEach((value, x) => {
-            if (value !== 0) {
-                context.fillStyle = colors[value];
-                context.fillRect(x + offset.x, y + offset.y, 1, 1);
-            }
-        });
-    });
-}
-
-// 충돌 감지
-function collide(arena, player) {
-    const [m, o] = [player.matrix, player.pos];
-    for (let y = 0; y < m.length; ++y) {
-        for (let x = 0; x < m[y].length; ++x) {
-            if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-// 줄 삭제
-function arenaSweep() {
-    let rowCount = 1;
-    outer: for (let y = arena.length - 1; y > 0; --y) {
-        for (let x = 0; x < arena[y].length; ++x) {
-            if (arena[y][x] === 0) continue outer;
-        }
-        const row = arena.splice(y, 1)[0].fill(0);
-        arena.unshift(row);
-        ++y;
-        player.score += rowCount * 10;
-        rowCount *= 2;
-    }
-    updateScore();
-}
-
-// 블록 합치기
-function merge(arena, player) {
-    player.matrix.forEach((row, y) => {
-        row.forEach((value, x) => {
-            if (value !== 0) {
-                arena[y + player.pos.y][x + player.pos.x] = value;
-            }
-        });
-    });
-}
-
-// 회전 logic
-function rotate(matrix, dir) {
-    for (let y = 0; y < matrix.length; ++y) {
-        for (let x = 0; x < y; ++x) {
-            [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
-        }
-    }
-    if (dir > 0) matrix.forEach(row => row.reverse());
-    else matrix.reverse();
-}
-
-// 플레이어 초기화
-function playerReset() {
-    const pieces = 'ILJOTSZ';
-    player.matrix = createPiece(pieces[pieces.length * Math.random() | 0]);
-    player.pos.y = 0;
-    player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
-    if (collide(arena, player)) {
-        arena.forEach(row => row.fill(0));
-        player.score = 0;
-        updateScore();
-    }
-}
-
-// 움직임 함수들
-function playerDrop() {
-    player.pos.y++;
-    if (collide(arena, player)) {
-        player.pos.y--;
-        merge(arena, player);
-        playerReset();
-        arenaSweep();
-    }
-    dropCounter = 0;
-}
-
-function playerMove(dir) {
-    player.pos.x += dir;
-    if (collide(arena, player)) {
-        player.pos.x -= dir;
-    }
-}
-
-function playerRotate(dir) {
-    const pos = player.pos.x;
-    let offset = 1;
-    rotate(player.matrix, dir);
-    while (collide(arena, player)) {
-        player.pos.x += offset;
-        offset = -(offset + (offset > 0 ? 1 : -1));
-        if (offset > player.matrix[0].length) {
-            rotate(player.matrix, -dir);
-            player.pos.x = pos;
-            return;
-        }
-    }
-}
-
-function updateScore() {
-    scoreElement.innerText = `Score: ${player.score}`;
-}
-
-const colors = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
-const arena = Array.from({length: 20}, () => Array(12).fill(0));
-
-const player = {
-    pos: {x: 0, y: 0},
-    matrix: null,
-    score: 0,
-};
-
-// 메인 루프
-let dropCounter = 0;
-let dropInterval = 1000;
-let lastTime = 0;
-
-function update(time = 0) {
-    const deltaTime = time - lastTime;
-    lastTime = time;
-    dropCounter += deltaTime;
-    if (dropCounter > dropInterval) {
-        playerDrop();
-    }
-    draw();
-    requestAnimationFrame(update);
-}
-
-// 버튼 이벤트 리스너 (모바일 전용)
-document.getElementById('left').addEventListener('click', () => playerMove(-1));
-document.getElementById('right').addEventListener('click', () => playerMove(1));
-document.getElementById('down').addEventListener('click', () => playerDrop());
-document.getElementById('rotate').addEventListener('click', () => playerRotate(1));
-
-playerReset();
-updateScore();
-update();
-// 키보드 조작 기능 추가
-document.addEventListener('keydown', event => {
-    // 32번은 스페이스바의 키 코드입니다.
-    if (event.keyCode === 32) {
-        playerRotate(1); // 블록 회전
-        event.preventDefault(); // 스페이스바 클릭 시 화면이 아래로 내려가는 것 방지
-    }
-    
-    // (선택 사항) PC에서도 화살표 키로 조작하고 싶다면 아래 코드를 추가하세요.
-    if (event.keyCode === 37) { // 왼쪽 화살표
-        playerMove(-1);
-    } else if (event.keyCode === 39) { // 오른쪽 화살표
-        playerMove(1);
-    } else if (event.keyCode === 40) { // 아래쪽 화살표
-        playerDrop();
-    }
-});
