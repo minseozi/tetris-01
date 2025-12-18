@@ -162,7 +162,7 @@
         const player = { pos: {x: 0, y: 0}, matrix: null, score: 0 };
 
         let dropCounter = 0;
-        let dropInterval = 1000;
+        let dropInterval = 1000; // 기본 속도 (1초)
         let lastTime = 0;
 
         function update(time = 0) {
@@ -174,29 +174,45 @@
             requestAnimationFrame(update);
         }
 
-        // 모바일 버튼 클릭 이벤트
-        document.getElementById('left').addEventListener('click', () => playerMove(-1));
-        document.getElementById('right').addEventListener('click', () => playerMove(1));
-        
-        // ⬇️ 버튼을 누를 때마다 한 칸씩 빠르게 내려가게 수정
-        document.getElementById('down').addEventListener('click', () => playerDrop());
-        
-        document.getElementById('rotate').addEventListener('click', () => playerRotate(1));
+        // --- 수정된 핵심 로직 ---
 
         // 키보드 이벤트
         document.addEventListener('keydown', event => {
-            if (event.keyCode === 32) { // 스페이스바: 회전
-                playerRotate(1);
-                event.preventDefault();
-            } else if (event.keyCode === 37) { // 왼쪽
+            if (event.keyCode === 37) { // 왼쪽
                 playerMove(-1);
             } else if (event.keyCode === 39) { // 오른쪽
                 playerMove(1);
-            } else if (event.keyCode === 40) { // 아래쪽 화살표: 한 칸씩 빠르게 하강 (소프트 드롭)
-                playerDrop();
+            } else if (event.keyCode === 40) { // 아래쪽 화살표를 누르고 있을 때
+                dropInterval = 50; // 속도를 아주 빠르게 (0.05초마다 하강)
+                event.preventDefault();
+            } else if (event.keyCode === 32) { // 스페이스바
+                playerRotate(1);
                 event.preventDefault();
             }
         });
+
+        document.addEventListener('keyup', event => {
+            if (event.keyCode === 40) { // 아래쪽 화살표에서 손을 떼면
+                dropInterval = 1000; // 원래 속도로 복구
+            }
+        });
+
+        // 모바일 터치 이벤트 (버튼을 누르고 있는 동안 빠르게)
+        const downBtn = document.getElementById('down');
+        downBtn.addEventListener('touchstart', (e) => {
+            dropInterval = 50;
+            e.preventDefault();
+        });
+        downBtn.addEventListener('touchend', () => {
+            dropInterval = 1000;
+        });
+        // 마우스 클릭용 (PC 테스트)
+        downBtn.addEventListener('mousedown', () => dropInterval = 50);
+        downBtn.addEventListener('mouseup', () => dropInterval = 1000);
+
+        document.getElementById('left').addEventListener('click', () => playerMove(-1));
+        document.getElementById('right').addEventListener('click', () => playerMove(1));
+        document.getElementById('rotate').addEventListener('click', () => playerRotate(1));
 
         playerReset();
         updateScore();
